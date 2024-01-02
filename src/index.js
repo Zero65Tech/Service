@@ -1,3 +1,5 @@
+const assert = require('assert');
+
 exports.init = async (config) => {
 
   let https = require('https');
@@ -29,13 +31,18 @@ exports.init = async (config) => {
   let session = undefined;
   let auth = undefined;
 
-  if(process.env.STAGE == 'alpha') { // Development / Testing
+  if(process.env.STAGE == 'alpha' || process.env.STAGE == 'gamma') {
 
     let fs = require('fs');
     if(fs.existsSync(process.cwd() + '/.session'))
       session = JSON.parse(await fs.promises.readFile(process.cwd() + '/.session'));
 
-  } else if(process.env.GOOGLE_SERVICE_ACCOUNT) { // Google Cloud Build
+  } else if(process.env.PLATFORM == 'GCP' && process.env.ENV == 'run') {
+
+    let { GoogleAuth } = require('google-auth-library');
+    auth = new GoogleAuth();
+
+  } else if(process.env.PLATFORM == 'GCP' && process.env.ENV == 'build') {
 
     let { GoogleAuth, Impersonated } = require('google-auth-library');
     auth = new Impersonated({
@@ -45,10 +52,9 @@ exports.init = async (config) => {
       lifetime: 3600, // 1hr
     });
 
-  } else { // Google Cloud Run
+  } else {
 
-    let { GoogleAuth } = require('google-auth-library');
-    auth = new GoogleAuth();
+    assert.fail('Unexpected Case - STAGE:${ process.env.STAGE }  ENV:${ process.env.ENV } !');
 
   }
 
@@ -56,30 +62,36 @@ exports.init = async (config) => {
 
   let gaxios = require('gaxios');
 
-  exports.Service = {};
+  for(let service in config) {
 
-  for(let service in config.service) {
-
-    let { baseURL, apis } = config.service[service];
+    let { baseURL, apis, params } = config[service];
 
     let client = undefined;
-    if(process.env.STAGE == 'alpha') // Development / Testing
+
+    if(process.env.STAGE == 'alpha' || process.env.STAGE == 'gamma') {
+
       client = session ? new gaxios.Gaxios({
         headers: { 'Cookie': 'sessionId=' + session.id }
       }) : gaxios;
-    else if(process.env.GOOGLE_SERVICE_ACCOUNT) // Google Cloud Build
+
+    } else if(process.env.PLATFORM == 'GCP' && process.env.ENV == 'run') {
+
+      client = await auth.getIdTokenClient(baseURL);
+
+    } else if(process.env.PLATFORM == 'GCP' && process.env.ENV == 'build') {
+
       client = new gaxios.Gaxios({
         headers: { 'Authorization': 'Bearer ' + await auth.fetchIdToken(baseURL) }
       });
-    else // Google Cloud Run
-      client = await auth.getIdTokenClient(baseURL);
 
-    exports.Service[service] = {};
+    }
+
+    exports[service] = {};
 
     if(apis) {
       for(let api in apis) {
         let { method, path } = apis[api];
-        exports.Service[service][api] = async (data, req, res) => {
+        exports[service][api] = async (data, req, res) => {
           // console.log(`${ method }: ${ baseURL }${ path } ${ JSON.stringify(data) }`);
           let options = { url: baseURL + path, method };
           if(method == 'GET')
@@ -90,7 +102,7 @@ exports.init = async (config) => {
         };
       }
     } else {
-      exports.Service[service].pipe = async (req, res) => {
+      exports[service].pipe = async (req, res) => {
         // console.log(`${ req.method }: ${ baseURL }${ req.path } ${ JSON.stringify(req.query || req.body) }`);
         let options = { url: baseURL + req.path, method: req.method };
         if(req.method == 'GET')
