@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Joi = require('joi');
 
 exports.init = async (config) => {
 
@@ -54,7 +55,7 @@ exports.init = async (config) => {
 
   } else {
 
-    assert.fail('Unexpected Case - STAGE:${ process.env.STAGE }  ENV:${ process.env.ENV } !');
+    assert.fail(`Unexpected Case - PLATFORM:${ process.env.PLATFORM } ENV:${ process.env.ENV } STAGE:${ process.env.STAGE } !`);
 
   }
 
@@ -64,7 +65,7 @@ exports.init = async (config) => {
 
   for(let service in config) {
 
-    let { baseURL, apis, params } = config[service];
+    let { baseURL, apis } = config[service];
 
     let client = undefined;
 
@@ -90,9 +91,11 @@ exports.init = async (config) => {
 
     if(apis) {
       for(let api in apis) {
-        let { method, path } = apis[api];
+        let { method, path, schema } = apis[api];
         exports[service][api] = async (data, req, res) => {
           // console.log(`${ method }: ${ baseURL }${ path } ${ JSON.stringify(data) }`);
+          if(!req || !res)
+            Joi.assert(data, schema);
           let options = { url: baseURL + path, method };
           if(method == 'GET')
             options.params = data;
