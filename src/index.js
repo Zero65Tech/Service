@@ -1,67 +1,72 @@
+const https = require('https');
+
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: Infinity });
+
+const doRequest = async (client, options, req, res) => {
+
+  options.agent = httpsAgent;
+  options.headers = {
+    'User-Agent': process.env.STAGE + '/' + (process.env.K_REVISION || process.env.USER || process.env.HOSTNAME)
+  };
+
+  if(req && res) {
+    if(req.headers['if-none-match'])
+      options.headers['If-None-Match'] = req.headers['if-none-match'];
+    options.responseType = 'stream';
+    options.validateStatus = status => true;
+    let response = await client.request(options);
+    response.data.pipe(res.status(response.status).set(response.headers));  
+  } else {
+    let response = await client.request(options);
+    return response.data;
+  }
+
+}
+
+
+
+// https://www.npmjs.com/package/google-auth-library
+
 const assert = require('assert');
+
+let session = undefined;
+let auth = undefined;
+
+if(process.env.STAGE == 'alpha' || process.env.STAGE == 'gamma') {
+
+  let fs = require('fs');
+  if(fs.existsSync(process.cwd() + '/.session'))
+    session = JSON.parse(await fs.promises.readFile(process.cwd() + '/.session'));
+
+} else if(process.env.PLATFORM == 'GCP' && process.env.ENV == 'run') {
+
+  let { GoogleAuth } = require('google-auth-library');
+  auth = new GoogleAuth();
+
+} else if(process.env.PLATFORM == 'GCP' && process.env.ENV == 'build') {
+
+  let { GoogleAuth, Impersonated } = require('google-auth-library');
+  auth = new Impersonated({
+    sourceClient: await (new GoogleAuth()).getClient(),
+    targetPrincipal: process.env.GOOGLE_SERVICE_ACCOUNT,
+    targetScopes: [],
+    lifetime: 3600, // 1hr
+  });
+
+} else {
+
+  assert.fail(`Unexpected Case - PLATFORM:${ process.env.PLATFORM } ENV:${ process.env.ENV } STAGE:${ process.env.STAGE } !`);
+
+}
+
+
+
+// https://github.com/googleapis/gaxios/blob/main/README.md
+
+const gaxios = require('gaxios');
 const Joi = require('joi');
 
 exports.init = async (config) => {
-
-  let https = require('https');
-  let httpsAgent = new https.Agent({ keepAlive: true, maxSockets: Infinity });
-
-  let doRequest = async (client, options, req, res) => {
-
-    options.agent = httpsAgent;
-    options.headers = {
-      'User-Agent': process.env.STAGE + '/' + (process.env.K_REVISION || process.env.USER || process.env.HOSTNAME)
-    };
-
-    if(req && res) {
-      if(req.headers['if-none-match'])
-        options.headers['If-None-Match'] = req.headers['if-none-match'];
-      options.responseType = 'stream';
-      options.validateStatus = status => true;
-      let response = await client.request(options);
-      response.data.pipe(res.status(response.status).set(response.headers));  
-    } else {
-      let response = await client.request(options);
-      return response.data;
-    }
-
-  }
-
-  // https://www.npmjs.com/package/google-auth-library
-
-  let session = undefined;
-  let auth = undefined;
-
-  if(process.env.STAGE == 'alpha' || process.env.STAGE == 'gamma') {
-
-    let fs = require('fs');
-    if(fs.existsSync(process.cwd() + '/.session'))
-      session = JSON.parse(await fs.promises.readFile(process.cwd() + '/.session'));
-
-  } else if(process.env.PLATFORM == 'GCP' && process.env.ENV == 'run') {
-
-    let { GoogleAuth } = require('google-auth-library');
-    auth = new GoogleAuth();
-
-  } else if(process.env.PLATFORM == 'GCP' && process.env.ENV == 'build') {
-
-    let { GoogleAuth, Impersonated } = require('google-auth-library');
-    auth = new Impersonated({
-      sourceClient: await (new GoogleAuth()).getClient(),
-      targetPrincipal: process.env.GOOGLE_SERVICE_ACCOUNT,
-      targetScopes: [],
-      lifetime: 3600, // 1hr
-    });
-
-  } else {
-
-    assert.fail(`Unexpected Case - PLATFORM:${ process.env.PLATFORM } ENV:${ process.env.ENV } STAGE:${ process.env.STAGE } !`);
-
-  }
-
-  // https://github.com/googleapis/gaxios/blob/main/README.md
-
-  let gaxios = require('gaxios');
 
   for(let service in config) {
 
