@@ -2,9 +2,24 @@ const https = require('https');
 
 const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: Infinity });
 
+const paramsSerializer = (params) => {
+  params = Object.entries(params).reduce((map, entry) => {
+    let [ key, value ] = entry;
+    if(value instanceof Array)
+      map[key + '[]'] = value;
+    else if(typeof value == 'object')
+      Object.entries(value).forEach(entry => map[key + '[' + entry[0] + ']'] = entry[1]);
+    else
+      map[key] = value;
+    return map;
+  }, {});
+  return querystring.stringify(params).replace(/%5B/g,'[').replace(/%5D/g,']');
+}
+
 const doRequest = async (client, options, req, res) => {
 
   options.agent = httpsAgent;
+  options.paramsSerializer = paramsSerializer;
   options.headers = {
     'User-Agent': process.env.STAGE + '/' + (process.env.K_REVISION || process.env.USER || process.env.HOSTNAME)
   };
