@@ -69,7 +69,7 @@ exports.init = async (config) => {
     auth = new Impersonated({
       sourceClient: await (new GoogleAuth()).getClient(),
       targetPrincipal: process.env.GOOGLE_SERVICE_ACCOUNT,
-      targetScopes: [],
+      targetScopes: [ 'https://www.googleapis.com/auth/cloud-platform' ],
       lifetime: 3600, // 1hr
     });
 
