@@ -119,6 +119,10 @@ exports.init = async (config) => {
             options.params = data;
           else if(method == 'POST')
             options.data = data;
+          else if(method == 'PUT')
+            options.data = data;
+          else if(method == 'PATCH')
+            options.data = data;
           return await doRequest(client, options, req, res);
         };
       }
